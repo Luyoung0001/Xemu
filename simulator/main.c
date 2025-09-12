@@ -7,6 +7,9 @@ int main() {
     init_gpr(&rv_cpu_gpr);     // 初始化 CPU 状态: 归零
 
     pc_change_type change_type;
+    change_type.change_type = 1; // 正常跳转
+
+
     uint32_t pc = 0x30000000 - 4;  // 当前 pc
     uint32_t pc_next;
     instruction_t inst;  // 指令

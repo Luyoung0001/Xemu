@@ -62,18 +62,18 @@ void init_memory(void) {
     load_inst_file(BIN_FILE);
 }
 
-// MMIO 地址映射，返回内存中的对应地址
-void* mmio_map(uint32_t addr) {
-    // 如果地址不在映射范围内，返回 NULL
-    if (addr < MEM_BASE_ADDR || addr >= MEM_BASE_ADDR + MEMORY_SIZE) {
-        return NULL;
-    }
 
-    // 返回地址对应的内存指针
-    return (void *)(memory + (addr - MEM_BASE_ADDR));
+// 实现 mmio_map 函数
+void* mmio_map(uint32_t addr) {
+    // 检查地址是否在模拟内存区域内
+    if (addr >= 0x30000000 && addr < (0x30000000 + MEMORY_SIZE)) {
+        // 如果是内存区域，则返回对应的内存地址
+        return &memory[addr - 0x30000000];  // 计算偏移量并返回地址
+    }
+    return NULL;
 }
 
-// 向内存写入数据
+// real memo_access
 void write_memory(uint32_t addr, uint32_t value) {
     void* mem_ptr = mmio_map(addr);
     if (mem_ptr != NULL) {
@@ -83,13 +83,13 @@ void write_memory(uint32_t addr, uint32_t value) {
     }
 }
 
-// 从内存读取数据
 uint32_t read_memory(uint32_t addr) {
     void* mem_ptr = mmio_map(addr);
     if (mem_ptr != NULL) {
         return *(uint32_t*)mem_ptr;
     } else {
         printf("内存读取失败：地址 0x%x 超出范围\n", addr);
-        return 0;
+        return 0;  // 如果读取失败，返回0
     }
 }
+

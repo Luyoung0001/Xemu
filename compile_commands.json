@@ -7,6 +7,7 @@
       "-std=c99",
       "-I/home/luyoung/Xemu/CPU/include",
       "-I/home/luyoung/Xemu/device/include",
+      "-I/home/luyoung/Xemu/commen",
       "-c",
       "-o",
       "/home/luyoung/Xemu/simulator/main.o",
@@ -15,6 +16,113 @@
     "directory": "/home/luyoung/Xemu",
     "file": "/home/luyoung/Xemu/simulator/main.c",
     "output": "/home/luyoung/Xemu/simulator/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-g",
+      "-std=c99",
+      "-I/home/luyoung/Xemu/CPU/include",
+      "-I/home/luyoung/Xemu/device/include",
+      "-I/home/luyoung/Xemu/commen",
+      "-c",
+      "-o",
+      "/home/luyoung/Xemu/device/src/memory.o",
+      "/home/luyoung/Xemu/device/src/memory.c"
+    ],
+    "directory": "/home/luyoung/Xemu",
+    "file": "/home/luyoung/Xemu/device/src/memory.c",
+    "output": "/home/luyoung/Xemu/device/src/memory.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-g",
+      "-std=c99",
+      "-I/home/luyoung/Xemu/CPU/include",
+      "-I/home/luyoung/Xemu/device/include",
+      "-I/home/luyoung/Xemu/commen",
+      "-c",
+      "-o",
+      "/home/luyoung/Xemu/CPU/src/core.o",
+      "/home/luyoung/Xemu/CPU/src/core.c"
+    ],
+    "directory": "/home/luyoung/Xemu",
+    "file": "/home/luyoung/Xemu/CPU/src/core.c",
+    "output": "/home/luyoung/Xemu/CPU/src/core.o"
+  },
+  {
+    "arguments": [
+      "/home/luyoung/chiplab/toolchains/loongson-gnu-toolchain-8.3-x86_64-loongarch32r-linux-gnusf-v2.0/bin/loongarch32r-linux-gnusf-gcc",
+      "-I../libs/include",
+      "-I../device/include",
+      "-I../commen",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-msoft-float",
+      "-c",
+      "-o",
+      "../libs/src/my_stdio.o",
+      "../libs/src/my_stdio.c"
+    ],
+    "directory": "/home/luyoung/Xemu/test",
+    "file": "/home/luyoung/Xemu/libs/src/my_stdio.c",
+    "output": "/home/luyoung/Xemu/libs/src/my_stdio.o"
+  },
+  {
+    "arguments": [
+      "/home/luyoung/chiplab/toolchains/loongson-gnu-toolchain-8.3-x86_64-loongarch32r-linux-gnusf-v2.0/bin/loongarch32r-linux-gnusf-gcc",
+      "-I../libs/include",
+      "-I../device/include",
+      "-I../commen",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-msoft-float",
+      "-c",
+      "-o",
+      "hello/hello.o",
+      "hello/hello.c"
+    ],
+    "directory": "/home/luyoung/Xemu/test",
+    "file": "/home/luyoung/Xemu/test/hello/hello.c",
+    "output": "/home/luyoung/Xemu/test/hello/hello.o"
+  },
+  {
+    "arguments": [
+      "/home/luyoung/chiplab/toolchains/loongson-gnu-toolchain-8.3-x86_64-loongarch32r-linux-gnusf-v2.0/bin/loongarch32r-linux-gnusf-gcc",
+      "-I../libs/include",
+      "-I../device/include",
+      "-I../commen",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-msoft-float",
+      "-c",
+      "-o",
+      "../device/src/serial.o",
+      "../device/src/serial.c"
+    ],
+    "directory": "/home/luyoung/Xemu/test",
+    "file": "/home/luyoung/Xemu/device/src/serial.c",
+    "output": "/home/luyoung/Xemu/device/src/serial.o"
+  },
+  {
+    "arguments": [
+      "/home/luyoung/chiplab/toolchains/loongson-gnu-toolchain-8.3-x86_64-loongarch32r-linux-gnusf-v2.0/bin/loongarch32r-linux-gnusf-gcc",
+      "-I../libs/include",
+      "-I../device/include",
+      "-I../commen",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-msoft-float",
+      "-c",
+      "-o",
+      "../libs/src/lib.o",
+      "../libs/src/lib.c"
+    ],
+    "directory": "/home/luyoung/Xemu/test",
+    "file": "/home/luyoung/Xemu/libs/src/lib.c",
+    "output": "/home/luyoung/Xemu/libs/src/lib.o"
   }
 ]
-

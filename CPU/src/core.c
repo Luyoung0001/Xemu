@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <memory.h>
+#include <commen.h>
 
 // 初始化 CPU 寄存器和程序计数器
 void init_gpr(riscv_cpu_gpr* cpu) {

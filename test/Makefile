@@ -1,74 +1,63 @@
-# 首先找到工具链，目标平台是 riscv，因此这里使用交叉编译
-CROSS_COMPILE = riscv64-linux-gnu-
+# 设置交叉编译工具链
+CROSS_COMPILE = loongarch32r-linux-gnusf-
 
-AS        = $(CROSS_COMPILE)gcc
-CC        = $(CROSS_COMPILE)gcc
-CXX       = $(CROSS_COMPILE)g++
-LD        = $(CROSS_COMPILE)ld
-AR        = $(CROSS_COMPILE)ar
-OBJDUMP   = $(CROSS_COMPILE)objdump
-OBJCOPY   = $(CROSS_COMPILE)objcopy
-READELF   = $(CROSS_COMPILE)readelf
+LA32R_GCC     := $(CROSS_COMPILE)gcc
+LA32R_AS      := $(CROSS_COMPILE)as
+LA32R_OBJDUMP := $(CROSS_COMPILE)objdump
+LA32R_OBJCOPY := $(CROSS_COMPILE)objcopy
 
-# 平台
-COMMON_CFLAGS = -march=rv32ima -mabi=ilp32 -O2
+# 平台相关的编译标志
+ARCHFLAGS += -ffreestanding -fno-builtin -nostartfiles -msoft-float
+LDFLAGS += -static  # 静态链接
 
-#======================编译被运行的程序========================
+# 包含路径
+INC_COMMEN = ../commen
 INC_LIB = ../libs/include
 INC_DEV = ../device/include
-SRC_LIB = ../libs/src/my_stdio.c
+
+# 源文件
+SRC_LIB = ../libs/src/lib.c
+SRC_MY_STDIO = ../libs/src/my_stdio.c
 SRC_DEV = ../device/src/serial.c
+SRC_MAIN = ./$(NAME)/$(NAME).c
 
-SRC = $(SRC_LIB)
+# 所有源文件
+SRC = $(SRC_LIB) $(SRC_DEV) $(SRC_MAIN) $(SRC_MY_STDIO)
 
-CFLAGS = -I$(INC_LIB) -I$(INC_DEV) $(COMMON_CFLAGS)
+CFLAGS = -I$(INC_LIB) -I$(INC_DEV) -I$(INC_COMMEN) $(ARCHFLAGS)
 
-LDFLAGS = -march=rv32ima -mabi=ilp32
-
-# 默认的 NAME
+# 默认目标名称
 NAME = hello
 OUT_DIR = out
-
-# 创建目标路径
 OBJ_DIR = $(OUT_DIR)/$(NAME)
-
-# 生成目标文件的完整路径
 ELF = $(OBJ_DIR)/$(NAME).elf
 BIN = $(OBJ_DIR)/$(NAME).bin
 TXT = $(OBJ_DIR)/$(NAME).txt
-OBJ = $(OBJ_DIR)/$(NAME).o $(OBJ_DIR)/my_stdio.o $(OBJ_DIR)/serial.o
 
-# 编译 hello.c
-$(OBJ_DIR)/$(NAME).o: $(NAME)/$(NAME).c
-	@mkdir -p $(OBJ_DIR)
-	bear -- $(CC) $(CFLAGS) -c $< -o $@
+EXEC = $(TXT)
 
-# 编译 my_stdio.c
-$(OBJ_DIR)/my_stdio.o: $(SRC_LIB)
-	@mkdir -p $(OBJ_DIR)
-	bear -- $(CC) $(CFLAGS) -c $< -o $@
+OBJ = $(SRC:.c=.o)
 
-$(OBJ_DIR)/serial.o: $(SRC_DEV)
-	@mkdir -p $(OBJ_DIR)
-	bear -- $(CC) $(CFLAGS) -c $< -o $@
+all: check_bear $(EXEC)
 
+check_bear:
+	@command -v bear > /dev/null || { echo "bear tool not found, please install it"; exit 1; }
 
-# 链接目标文件生成 ELF 文件
+%.o: %.c
+	@mkdir -p $(OBJ_DIR)  # 创建目标文件夹
+	bear --append --output ../compile_commands.json -- $(LA32R_GCC) $(CFLAGS) -c $< -o $@
+
 $(ELF): $(OBJ)
-	$(LD) $(LDFLAGS) $(OBJ) -o $(ELF) -v
+	@mkdir -p $(OBJ_DIR)  # 创建目标文件夹
+	$(LA32R_GCC) $(OBJ) -o $(ELF) $(LDFLAGS)
 
-# 生成二进制文件
 $(BIN): $(ELF)
-	$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(ELF) $(BIN)
+	$(LA32R_OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(ELF) $(BIN)
 
-# 生成汇编文件
-$(TXT): $(ELF)
-	$(OBJDUMP) -d $(ELF) > $(TXT)
-
-all: $(TXT)
-
+$(TXT): $(ELF) $(BIN)
+	$(LA32R_OBJDUMP) -d $(ELF) > $(TXT)
 
 clean:
-	rm -rf $(OUT_DIR)
+	rm -rf $(OUT_DIR) ../libs/src/*.o ../device/src/*.o ./$(NAME)/$(NAME).o
 
-.PHONY: clean $(ELF) $(BIN) $(TXT)
+.PHONY: clean check_bear all $(ELF) $(BIN) $(TXT)

@@ -1,7 +1,9 @@
 #include <serial.h>
-#include <stdio.h>
+#include <mmio.h>
+#include <stdint.h>
 
-// 模拟的 serial_putc() 系统调用，模拟结束，这里使用系统调用来借助 host 进行输出
-void serial_putc(char c) {
-    putchar(c);
+
+// 串口输出
+void write_uart(char value) {
+    printf("%c", value); // 调用系统调用模拟串口输出
 }

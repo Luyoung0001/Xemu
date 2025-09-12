@@ -1,3 +1,8 @@
-// 实现一些基本的 lib 函数，用于和测试程序链接
+#include <lib.h>
+#include <commen.h>
+#include <stdint.h>
 
-
+void serial_putc(char value) {
+    volatile uint8_t *uart_reg = (volatile uint8_t *)(UART_BASE + UART_REG_OFFSET);
+    *uart_reg = value;  // 这里的赋值会被编译器优化为 st.b 指令
+}
