@@ -8,6 +8,100 @@
       "-I/home/luyoung/Xemu/CPU/include",
       "-I/home/luyoung/Xemu/device/include",
       "-I/home/luyoung/Xemu/commen",
+      "-I/home/luyoung/Xemu/difftest/include",
+      "-c",
+      "-o",
+      "/home/luyoung/Xemu/difftest/src/difftest.o",
+      "/home/luyoung/Xemu/difftest/src/difftest.c"
+    ],
+    "directory": "/home/luyoung/Xemu",
+    "file": "/home/luyoung/Xemu/difftest/src/difftest.c",
+    "output": "/home/luyoung/Xemu/difftest/src/difftest.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-g",
+      "-std=c99",
+      "-I/home/luyoung/Xemu/CPU/include",
+      "-I/home/luyoung/Xemu/device/include",
+      "-I/home/luyoung/Xemu/commen",
+      "-I/home/luyoung/Xemu/difftest/include",
+      "-c",
+      "-o",
+      "/home/luyoung/Xemu/simulator/main.o",
+      "/home/luyoung/Xemu/simulator/main.c"
+    ],
+    "directory": "/home/luyoung/Xemu",
+    "file": "/home/luyoung/Xemu/simulator/main.c",
+    "output": "/home/luyoung/Xemu/simulator/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-g",
+      "-std=c99",
+      "-I/home/luyoung/Xemu/CPU/include",
+      "-I/home/luyoung/Xemu/device/include",
+      "-I/home/luyoung/Xemu/commen",
+      "-I/home/luyoung/Xemu/difftest/include",
+      "-c",
+      "-o",
+      "/home/luyoung/Xemu/device/src/memory.o",
+      "/home/luyoung/Xemu/device/src/memory.c"
+    ],
+    "directory": "/home/luyoung/Xemu",
+    "file": "/home/luyoung/Xemu/device/src/memory.c",
+    "output": "/home/luyoung/Xemu/device/src/memory.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-g",
+      "-std=c99",
+      "-I/home/luyoung/Xemu/CPU/include",
+      "-I/home/luyoung/Xemu/device/include",
+      "-I/home/luyoung/Xemu/commen",
+      "-I/home/luyoung/Xemu/difftest/include",
+      "-c",
+      "-o",
+      "/home/luyoung/Xemu/CPU/src/core.o",
+      "/home/luyoung/Xemu/CPU/src/core.c"
+    ],
+    "directory": "/home/luyoung/Xemu",
+    "file": "/home/luyoung/Xemu/CPU/src/core.c",
+    "output": "/home/luyoung/Xemu/CPU/src/core.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-g",
+      "-std=c99",
+      "-I/home/luyoung/Xemu/CPU/include",
+      "-I/home/luyoung/Xemu/device/include",
+      "-I/home/luyoung/Xemu/commen",
+      "-c",
+      "-o",
+      "/home/luyoung/Xemu/CPU/src/core.o",
+      "/home/luyoung/Xemu/CPU/src/core.c"
+    ],
+    "directory": "/home/luyoung/Xemu",
+    "file": "/home/luyoung/Xemu/CPU/src/core.c",
+    "output": "/home/luyoung/Xemu/CPU/src/core.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-g",
+      "-std=c99",
+      "-I/home/luyoung/Xemu/CPU/include",
+      "-I/home/luyoung/Xemu/device/include",
+      "-I/home/luyoung/Xemu/commen",
       "-c",
       "-o",
       "/home/luyoung/Xemu/simulator/main.o",
@@ -41,9 +135,9 @@
       "-Wall",
       "-g",
       "-std=c99",
-      "-I/home/luyoung/Xemu/CPU/include",
+      "-I/home/luyoung/Xemu/difftest/include",
       "-I/home/luyoung/Xemu/device/include",
-      "-I/home/luyoung/Xemu/commen",
+      "-I/home/luyoung/Xemu/difftest",
       "-c",
       "-o",
       "/home/luyoung/Xemu/CPU/src/core.o",

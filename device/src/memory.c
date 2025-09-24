@@ -1,14 +1,14 @@
 #include <memory.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-uint8_t *memory = NULL;  // 模拟的内存区域
-#define BIN_FILE ""    //文件名
+uint8_t* memory = NULL;                                       // 模拟的内存区域
+char* bin_file = "/home/luyoung/Xemu/ref/func/obj/main.bin";  // 文件名
 
 // 读取 inst.bin 文件到内存
-void load_inst_file(const char *filename) {
-    FILE *file = fopen(filename, "rb");  // 打开文件，二进制模式
+void load_inst_file(const char* filename) {
+    FILE* file = fopen(filename, "rb");  // 打开文件，二进制模式
     if (file == NULL) {
         printf("无法打开文件: %s\n", filename);
         exit(1);
@@ -39,7 +39,7 @@ void load_inst_file(const char *filename) {
 
 // 内存初始化
 void init_memory(void) {
-    memory = (uint8_t *)malloc(MEMORY_SIZE);
+    memory = (uint8_t*)malloc(MEMORY_SIZE);
     if (memory == NULL) {
         printf("内存分配失败！\n");
         exit(1);  // 如果内存分配失败，退出
@@ -55,20 +55,20 @@ void init_memory(void) {
     for (int i = 0; i < MEMORY_SIZE; i++) {
         memory[i] = 0;
     }
-    // 将地址 0x30000000 映射到我们分配的内存
-    // 地址 0x30000000 应该映射到 memory 的第一个单元
-    printf("内存初始化完成，内存大小: %d 字节，起始地址: 0x%p\n", MEMORY_SIZE, memory);
+    // 将地址 0x1c000000 映射到我们分配的内存
+    // 地址 0x1c000000 应该映射到 memory 的第一个单元
+    printf("内存初始化完成，内存大小: %d 字节，起始地址: 0x%p\n", MEMORY_SIZE,
+           memory);
 
-    load_inst_file(BIN_FILE);
+    load_inst_file(bin_file);
 }
-
 
 // 实现 mmio_map 函数
 void* mmio_map(uint32_t addr) {
     // 检查地址是否在模拟内存区域内
-    if (addr >= 0x30000000 && addr < (0x30000000 + MEMORY_SIZE)) {
+    if (addr >= 0x1c000000 && addr < (0x1c000000 + MEMORY_SIZE)) {
         // 如果是内存区域，则返回对应的内存地址
-        return &memory[addr - 0x30000000];  // 计算偏移量并返回地址
+        return &memory[addr - 0x1c000000];  // 计算偏移量并返回地址
     }
     return NULL;
 }
@@ -86,10 +86,11 @@ void write_memory(uint32_t addr, uint32_t value) {
 uint32_t read_memory(uint32_t addr) {
     void* mem_ptr = mmio_map(addr);
     if (mem_ptr != NULL) {
+        printf("inst_data: %08x--->", *(uint32_t*)mem_ptr);
+        printf("pc: %08x\n", addr);
         return *(uint32_t*)mem_ptr;
     } else {
         printf("内存读取失败：地址 0x%x 超出范围\n", addr);
         return 0;  // 如果读取失败，返回0
     }
 }
-

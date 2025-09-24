@@ -1,8 +1,114 @@
 #include <commen.h>
 #include <core.h>
+#include <difftest.h>
 #include <memory.h>
 #include <stdint.h>
 #include <stdio.h>
+
+pc_change_type change_type;
+riscv_cpu_gpr gpr;  // 实例化通用寄存器
+uint32_t pc;        // 当前 pc
+uint32_t pc_next;
+instruction_t inst;  // 指令
+decode_info de_info;
+uint32_t decode_result;
+execute_result exe_resul;
+mem_result mem_re;
+
+uint8_t inst_add_w;
+uint8_t inst_sub_w;
+uint8_t inst_slt;
+uint8_t inst_slti;
+uint8_t inst_sltu;
+uint8_t inst_sltui;
+uint8_t inst_nor;
+uint8_t inst_and;
+uint8_t inst_andi;
+uint8_t inst_or;
+uint8_t inst_ori;
+uint8_t inst_xor;
+uint8_t inst_xori;
+uint8_t inst_sll;
+uint8_t inst_slli_w;
+uint8_t inst_srl;
+uint8_t inst_srli_w;
+uint8_t inst_sra;
+uint8_t inst_srai_w;
+uint8_t inst_addi_w;
+uint8_t inst_ld_w;
+uint8_t inst_ld_b;
+uint8_t inst_ld_bu;
+uint8_t inst_ld_h;
+uint8_t inst_ld_hu;
+uint8_t inst_st_w;
+uint8_t inst_st_b;
+uint8_t inst_st_h;
+uint8_t inst_jirl;
+uint8_t inst_b;
+uint8_t inst_bl;
+uint8_t inst_blt;
+uint8_t inst_bltu;
+uint8_t inst_beq;
+uint8_t inst_bne;
+uint8_t inst_bge;
+uint8_t inst_bgeu;
+uint8_t inst_lu12i_w;
+uint8_t inst_pcaddu12i;
+
+uint8_t inst_mul_w;
+uint8_t inst_mulh_w;
+uint8_t inst_mulh_wu;
+uint8_t inst_div_w;
+uint8_t inst_div_wu;
+uint8_t inst_mod_w;
+uint8_t inst_mod_wu;
+
+uint8_t inst_csrrd;
+uint8_t inst_csrwr;
+uint8_t inst_csrxchg;
+uint8_t inst_ertn;
+
+uint8_t inst_syscall;
+uint8_t inst_break;
+
+uint8_t inst_rdcntid_w;
+uint8_t inst_rdcntvl_w;
+uint8_t inst_rdcntvh_w;
+uint8_t inst_zero;
+
+uint8_t inst_tlbsrch;
+uint8_t inst_tlbrd;
+uint8_t inst_tlbwr;
+uint8_t inst_tlbfill;
+uint8_t inst_invtlb;
+
+uint8_t need_ui5;
+uint8_t need_si12;
+uint8_t need_si14;
+uint8_t need_si16;
+uint8_t need_si20;
+uint8_t need_si26;
+uint8_t src2_is_4;
+uint8_t need_ui12;
+
+uint8_t inst_ll_w;
+uint8_t inst_sc_w;
+
+uint8_t inst_dbar;
+uint8_t inst_ibar;
+
+uint8_t inst_idle;
+
+uint8_t inst_cacop;
+uint8_t inst_valid_cacop;
+
+// 指令合法，但是暂时没有执行意义
+uint8_t inst_nop;
+uint8_t inst_preld;
+uint8_t inst_cpucfg;
+
+uint8_t inst_exist_debug;
+
 // 译码结果
 
 uint8_t alu_op_add;
@@ -48,6 +154,7 @@ uint32_t imm;         // 立即数
 uint8_t gpr_we;       // 是否写寄存器
 uint8_t mem_we;       // 是否写内存
 uint8_t gpr_wr_addr;  // 写寄存器的地址
+uint32_t current_pc;  // 当前处理的pc
 
 uint32_t br_offs;
 uint32_t jirl_offs;
@@ -71,37 +178,43 @@ uint32_t mul_div_src1;    // 操作数
 uint32_t mul_div_src2;    // 操作数
 uint32_t mul_div_result;  // 乘除法 计算结果
 
+uint8_t dst_is_r1;
+uint8_t dst_is_rj;
+
+uint8_t gr_we;  // 寄存器写
+uint8_t dest;   // 寄存写地址
+
 // 初始化 CPU 寄存器和程序计数器
-void init_gpr(riscv_cpu_gpr* cpu) {
+void init_gpr() {
     for (int i = 0; i < NUM_REGISTERS; i++) {
-        cpu->regs[i] = 0;  // 初始化寄存器为0
+        gpr.regs[i] = 0;  // 初始化寄存器为0
     }
 }
 
 // pre_IFU 对指令的 PC 进行一个处理
-
-uint32_t next_pc(uint32_t pc, pc_change_type* change_type) {
+void next_pc() {
     // 根据情况来判断 next_pc 的值
-    switch (change_type->change_type) {
+    switch (change_type.change_type) {
         case 1:
-            return pc + 4;
+            pc += 4;
             break;
+        case 2:
+            pc = br_target;
         default:
-            return pc + 4;
+            pc += 4;
     }
-    return pc + 4;
 }
 
 // 取指
-instruction_t inst_fetch(uint32_t pc) {
+instruction_t inst_fetch() {
     uint32_t read_result = read_memory(pc);
     return (instruction_t)read_result;
 }
 
 // IDU 访问寄存器
-void rf_result(riscv_cpu_gpr* gpr) {
-    rf_rdata1 = gpr->regs[rf_raddr1];
-    rf_rdata2 = gpr->regs[rf_raddr2];
+void rf_result() {
+    rf_rdata1 = gpr.regs[rf_raddr1];
+    rf_rdata2 = gpr.regs[rf_raddr2];
 }
 
 // 解析译码结果
@@ -122,7 +235,6 @@ void decoder_more() {
     alu_op_sra = inst_srai_w | inst_sra;
 }
 
-// alu 计算单元
 // alu 计算单元
 void alu_caculate() {
     uint32_t _add = alu_src1 + alu_src2;
@@ -149,7 +261,7 @@ void alu_caculate() {
                  : alu_op_sll  ? _sll
                  : alu_op_srl  ? _srl
                  : alu_op_sra  ? _sra
-                               : 0;  // 默认值，当所有标志都为0时，返回0
+                               : 0;
 }
 // mult_dev 计算单元
 
@@ -166,25 +278,26 @@ void mult_div() {
                      : inst_div_w   ? div_w
                      : inst_div_wu  ? divu_w
                      : inst_mod_w   ? mod_w
-                     : modu_w       ? modu_w
+                     : inst_mod_wu  ? modu_w
                                     : 0;
 }
 
-// 译码
-uint32_t inst_decode(instruction_t inst,
-                     decode_info* dc_info,
-                     riscv_cpu_gpr* gpr) {
-    // 这里进行译码
-    // 得到以下信息:
-    // 1、指令类型
-    // 2、两个寄存器访问地址
-    // 3、操作类型：alu or what
-    // 4、如果是访存：访存类型
-    // 等等信息保存在全局变量中，以供后续单元使用？
-    // 还是创建一个结构体，直接传送到inst_exexute?
-    // 这里为了反应真实 CPU情况，应该创建一个结构体进行传送
-    // 尽量避免全局变量
+uint32_t extend(uint8_t s, uint8_t length_of_num, uint32_t num) {
+    uint32_t mask = (1U << length_of_num) - 1;
+    num &= mask;
+    if (s) {
+        if (num & (1U << (length_of_num - 1))) {
+            return num | (~mask);
+        }
+    } else {
+        return num;
+    }
+    return num;
+}
 
+// 译码
+uint32_t inst_decode() {
+    // 解析指令类型
     inst_add_w =
         (inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x00 &&
          inst.decode.op_21_20 == 0x01 && inst.decode.op_19_15 == 0x00);
@@ -195,22 +308,191 @@ uint32_t inst_decode(instruction_t inst,
                 inst.decode.op_21_20 == 0x01 && inst.decode.op_19_15 == 0x04);
     inst_slti = (inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x08);
 
+    inst_addi_w =
+        (inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0a);
+
     // 输送到 debug 系统，如果指令执行到了不存在的指令处，那么继续添加
-    inst_exist_debug = inst_add_w | inst_sub_w | inst_slt | inst_slti;
-    if (inst_exist_debug) {
+    inst_exist_debug =
+        inst_add_w | inst_sub_w | inst_slt | inst_slti | inst_addi_w;
+
+    if (!inst_exist_debug) {
         return inst.word;
     }
 
+    // 解析指令字段
+    instruction_t instr = inst;
+    uint8_t rd = instr.decode.rd_4_0;
+    uint8_t rj = instr.decode.rj_9_5;
+    uint8_t rk = instr.decode.rk_14_10;
+
+    uint16_t i12 = (instr.word >> 10) & 0xfff;
+    uint16_t i14 = (instr.word >> 10) & 0x3fff;
+    uint16_t i20 = (instr.word >> 5) & 0xfffff;
+    uint16_t i16 = (instr.word >> 10) & 0xffff;
+    uint16_t i26 = (instr.word & 0x3ff) | i16;
+
+    need_ui5 = inst_slli_w | inst_srli_w | inst_srai_w;
+    need_si12 = inst_addi_w | inst_ld_w | inst_st_w | inst_slti | inst_sltui |
+                inst_ld_b | inst_ld_bu | inst_ld_h | inst_ld_hu | inst_st_b |
+                inst_st_h | inst_valid_cacop;
+
+    need_si14 = inst_ll_w | inst_sc_w;
+    need_si16 = inst_jirl | inst_beq | inst_bne;
+
+    need_si20 = inst_lu12i_w | inst_pcaddu12i;
+    need_si26 = inst_b | inst_bl;
+
+    src2_is_4 = inst_jirl | inst_bl;
+
+    need_ui12 = inst_andi | inst_ori | inst_xori;
+
+    imm = src2_is_4   ? 4
+          : need_ui12 ? i12
+          : need_si14 ? extend(1, 14, i14) << 2
+          : need_si20 ? i20 << 12
+                      : extend(1, 12, i12);
+
+
+    br_offs = need_si26 ? extend(1, 26, i26) << 2 : extend(1, 16, i16) << 2;
+
+    jirl_offs = extend(1, 16, i16) << 2;
+
+    src_reg_is_rd = inst_beq | inst_bne | inst_st_w | inst_st_h | inst_st_b |
+                    inst_sc_w | inst_blt | inst_bltu | inst_bge | inst_bgeu |
+                    inst_csrwr | inst_csrxchg;
+
+    src1_is_pc = inst_jirl | inst_bl | inst_pcaddu12i;
+
+    src2_is_imm = inst_slli_w | inst_srli_w | inst_srai_w | inst_addi_w |
+                  inst_lu12i_w | inst_jirl | inst_bl | inst_slti | inst_sltui |
+                  inst_andi | inst_ori | inst_xori | inst_pcaddu12i |
+                  inst_st_b | inst_st_h | inst_st_w | inst_ld_b | inst_ld_bu |
+                  inst_ld_h | inst_ld_hu | inst_ld_w | inst_ll_w | inst_sc_w |
+                  inst_valid_cacop;
+
+    res_from_mem =
+        inst_ld_w | inst_ld_b | inst_ld_bu | inst_ld_h | inst_ld_hu | inst_ll_w;
+
+    res_from_csr = inst_csrrd | inst_csrwr | inst_csrxchg | inst_rdcntid_w |
+                   inst_rdcntvl_w | inst_rdcntvh_w | inst_cpucfg;
+
+    dst_is_r1 = inst_bl;
+    dst_is_rj = inst_rdcntid_w;
+
+    gr_we = inst_jirl | inst_bl | inst_add_w | inst_sub_w | inst_slt |
+            inst_sltu | inst_nor | inst_and | inst_or | inst_xor | inst_slli_w |
+            inst_srli_w | inst_srai_w | inst_addi_w | inst_ld_w | inst_ld_b |
+            inst_ld_bu | inst_ld_h | inst_ld_hu | inst_lu12i_w | inst_slti |
+            inst_sltui | inst_andi | inst_ori | inst_xori | inst_sll |
+            inst_srl | inst_sra | inst_pcaddu12i | inst_mul_w | inst_mulh_w |
+            inst_mulh_wu | inst_div_w | inst_div_wu | inst_mod_w | inst_mod_wu |
+            inst_csrrd | inst_csrxchg | inst_csrwr | inst_rdcntid_w |
+            inst_rdcntvl_w | inst_rdcntvh_w | inst_ll_w | inst_sc_w |
+            inst_cpucfg;
+
+    mem_we = inst_st_w || inst_st_b || inst_st_h;
+    dest = dst_is_r1 ? 1 : dst_is_rj ? rj : rd;
+
+    rf_raddr1 = rj;
+    rf_raddr2 = src_reg_is_rd ? rd : rk;
+
+    rj_eq_rd = rj_value == rkd_value;
+    rj_lt_rd = (int)rj_value < (int)rkd_value;
+    rj_ltu_rd = rj_value < rkd_value;
+    rj_gt_rd = (int)rj_value >= (int)rkd_value;
+    rj_gtu_rd = rj_value >= rkd_value;
+
+    // 是否跳转
+    br_taken = (inst_beq & rj_eq_rd) | (inst_bne & !rj_eq_rd) | inst_jirl |
+               inst_bl | inst_b | (inst_blt & rj_lt_rd) |
+               (inst_bltu & rj_ltu_rd) | (inst_bge & rj_gt_rd) |
+               (inst_bgeu & rj_gtu_rd);
+    // 跳转目标
+    br_target = (inst_beq | inst_bne | inst_bl | inst_b | inst_blt | inst_bltu |
+                 inst_bge | inst_bgeu)
+                    ? (current_pc + br_offs)
+                    : (rj_value + jirl_offs);
+
+    // 指示指令是否有效，引发某些异常
+    inst_valid = inst_add_w | inst_sub_w | inst_slt | inst_slti | inst_sltu |
+                 inst_sltui | inst_nor | inst_and | inst_andi | inst_or |
+                 inst_ori | inst_xor | inst_xori | inst_sll | inst_slli_w |
+                 inst_srl | inst_srli_w | inst_sra | inst_srai_w | inst_addi_w |
+                 inst_ld_w | inst_ld_b | inst_ld_bu | inst_ld_h | inst_ld_hu |
+                 inst_st_w | inst_st_b | inst_st_h | inst_jirl | inst_b |
+                 inst_bl | inst_blt | inst_bltu | inst_beq | inst_bne |
+                 inst_bge | inst_bgeu | inst_lu12i_w | inst_pcaddu12i |
+                 inst_mul_w | inst_mulh_w | inst_mulh_wu | inst_div_w |
+                 inst_div_wu | inst_mod_w | inst_mod_wu | inst_csrrd |
+                 inst_csrwr | inst_csrxchg | inst_ertn | inst_syscall |
+                 inst_break | inst_rdcntid_w | inst_rdcntvl_w | inst_rdcntvh_w |
+                 inst_tlbsrch | inst_tlbrd | inst_tlbwr | inst_tlbfill |
+                 inst_ll_w | inst_sc_w | inst_dbar | inst_ibar | inst_idle |
+                 inst_valid_cacop | inst_nop | inst_preld | inst_cpucfg |
+                 (inst_invtlb & (rd == 0 || rd == 1 || rd == 2 || rd == 3 ||
+                                 rd == 4 || rd == 5 || rd == 6));
+
+    kernel_inst = inst_csrrd | inst_csrwr | inst_csrxchg | inst_tlbsrch |
+                  inst_tlbrd | inst_tlbwr | inst_tlbfill | inst_invtlb |
+                  inst_idle | inst_ertn;
+
     // 访问 gpr
-    rf_result(gpr);
+    rf_result();
+
+    rj_value = rf_rdata1;
+    rkd_value = rf_rdata2;
+
+    decoder_more();
+
+    alu_src1 = src1_is_pc ? pc : rj_value;
+    alu_src2 = src2_is_imm ? imm : rkd_value;
+
+    // 计算类型：
+    // alu
+    // mult_div
+    de_info.inst_op_type = (alu_op_add | alu_op_sub | alu_op_slt | alu_op_sltu |
+                            alu_op_and | alu_op_nor | alu_op_or | alu_op_xor |
+                            alu_op_sll | alu_op_srl | alu_op_sra)
+                               ? ALU_TYPE
+                           : (inst_mul_w | inst_mulh_wu | inst_div_w |
+                              inst_div_wu | inst_mod_w | inst_mod_wu)
+                               ? MULT_DIV_TYPE
+                               : UNKNOWN_TYPE;
+
+    change_type.change_type = br_taken ? 2 : 1;
+
 
     return 0;
 }
 // 执行
-void inst_execute(decode_info* dc_info, execute_result* exe_re) {}
+void inst_execute() {
+    if (de_info.inst_op_type == ALU_TYPE) {
+        alu_caculate();
+    } else if (de_info.inst_op_type == MULT_DIV_TYPE) {
+        mult_div();
+    }
+}
 
 // 访存
-void memo_access(execute_result* exe_result, mem_result* mem_re) {}
+void memo_access() {
+    // 访存
+    // ...
+    // 返回信息
+    mem_re.wr_reg_addr = dest;
+    mem_re.wr_reg = gr_we;
+    mem_re.alu_result = alu_result;
+    mem_re.mult_dev_result = mul_div_result;
+    mem_re.load_or_store_addr = alu_result;
+}
 
 // 回写
-void write_back(riscv_cpu_gpr* cpu, mem_result* mem_re) {}
+void write_back() {
+    mycpu_trace_info->we = mem_re.wr_reg;
+    mycpu_trace_info->pc = pc;
+    mycpu_trace_info->wnum = mem_re.wr_reg_addr;
+    mycpu_trace_info->value = mem_re.alu_result;
+
+    if (mem_re.wr_reg && mem_re.wr_reg_addr != 0) {
+        gpr.regs[mem_re.wr_reg_addr] = mem_re.alu_result;
+    }
+}
