@@ -154,7 +154,6 @@ uint32_t imm;         // 立即数
 uint8_t gpr_we;       // 是否写寄存器
 uint8_t mem_we;       // 是否写内存
 uint8_t gpr_wr_addr;  // 写寄存器的地址
-uint32_t current_pc;  // 当前处理的pc
 
 uint32_t br_offs;
 uint32_t jirl_offs;
@@ -166,7 +165,7 @@ uint8_t rj_gt_rd;
 uint8_t rj_gtu_rd;
 
 uint8_t br_taken;     // 是否跳转
-uint8_t br_target;    // 跳转地址
+uint32_t br_target;    // 跳转地址
 uint8_t inst_valid;   // 当前指令是否有效，如果无效可能会引发异常
 uint8_t kernel_inst;  // 是否是核心态指令
 
@@ -200,6 +199,7 @@ void next_pc() {
             break;
         case 2:
             pc = br_target;
+            break;
         default:
             pc += 4;
     }
@@ -298,28 +298,6 @@ uint32_t extend(uint8_t s, uint8_t length_of_num, uint32_t num) {
 // 译码
 uint32_t inst_decode() {
     // 解析指令类型
-    inst_add_w =
-        (inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x00 &&
-         inst.decode.op_21_20 == 0x01 && inst.decode.op_19_15 == 0x00);
-    inst_sub_w =
-        (inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x00 &&
-         inst.decode.op_21_20 == 0x01 && inst.decode.op_19_15 == 0x02);
-    inst_slt = (inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x00 &&
-                inst.decode.op_21_20 == 0x01 && inst.decode.op_19_15 == 0x04);
-    inst_slti = (inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x08);
-
-    inst_addi_w =
-        (inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0a);
-
-    // 输送到 debug 系统，如果指令执行到了不存在的指令处，那么继续添加
-    inst_exist_debug =
-        inst_add_w | inst_sub_w | inst_slt | inst_slti | inst_addi_w;
-
-    if (!inst_exist_debug) {
-        return inst.word;
-    }
-
-    // 解析指令字段
     instruction_t instr = inst;
     uint8_t rd = instr.decode.rd_4_0;
     uint8_t rj = instr.decode.rj_9_5;
@@ -330,6 +308,137 @@ uint32_t inst_decode() {
     uint16_t i20 = (instr.word >> 5) & 0xfffff;
     uint16_t i16 = (instr.word >> 10) & 0xffff;
     uint16_t i26 = (instr.word & 0x3ff) | i16;
+    uint8_t inst_25 = (inst.word & 0b00000010000000000000000000000000) ==
+                      1;  // 指令的第 25 位
+    uint8_t inst_24 = (inst.word & 0b00000001000000000000000000000000) ==
+                      1;  // 指令的第 24 位
+
+    inst_add_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                 inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x00;
+    inst_sub_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                 inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x02;
+    inst_slt = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x04;
+    inst_slti = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x08;
+    inst_sltu = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x05;
+    inst_sltui = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x09;
+    inst_nor = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x08;
+    inst_and = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x09;
+    inst_andi = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0xd;
+    inst_or = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+              inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x0a;
+    inst_ori = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0xe;
+    inst_xor = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x0b;
+    inst_xori = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0xf;
+    inst_sll = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0xe;
+    inst_slli_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x1 &
+                  inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x01;
+    inst_srl = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x0f;
+    inst_srli_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x1 &
+                  inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x09;
+    inst_sra = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x10;
+    inst_srai_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x1 &
+                  inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x11;
+    inst_addi_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0xa;
+
+    inst_ld_w = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x2;
+    inst_ld_b = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x0;
+    inst_ld_bu = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x08;
+    inst_ld_h = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x1;
+    inst_ld_hu = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x09;
+    inst_st_w = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x6;
+    inst_st_b = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x4;
+    inst_st_h = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x5;
+
+    inst_jirl = inst.decode.op_31_26 == 0x13;
+    inst_b = inst.decode.op_31_26 == 0x14;
+    inst_bl = inst.decode.op_31_26 == 0x15;
+    inst_blt = inst.decode.op_31_26 == 0x18;
+    inst_bltu = inst.decode.op_31_26 == 0x1a;
+    inst_beq = inst.decode.op_31_26 == 0x16;
+    inst_bne = inst.decode.op_31_26 == 0x17;
+    inst_bge = inst.decode.op_31_26 == 0x19;
+    inst_bgeu = inst.decode.op_31_26 == 0x1b;
+
+    inst_lu12i_w = inst.decode.op_31_26 == 0x05 && ~inst_25;
+    inst_pcaddu12i = inst.decode.op_31_26 == 0x07 && ~inst_25;
+
+    inst_mul_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                 inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x18;
+    inst_mulh_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                  inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x19;
+    inst_mulh_wu = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                   inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x1a;
+    inst_div_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                 inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x0;
+    inst_div_wu = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                  inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x2;
+    inst_mod_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                 inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x1;
+    inst_mod_wu = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                  inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x3;
+
+    inst_csrrd =
+        inst.decode.op_31_26 == 0x01 && ~inst_25 && ~inst_24 && rj == 0x00;
+    inst_csrwr =
+        inst.decode.op_31_26 == 0x01 && ~inst_25 & ~inst_24 & rj == 0x01;
+    inst_csrxchg = inst.decode.op_31_26 == 0x01 &&
+                   ~inst_25 & ~inst_24 & ~rj == 0x00 & ~rj == 0x01;
+    inst_ertn = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
+                inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
+                rk == 0x0e & rj == 0x00 & rd == 0x00;
+    inst_syscall = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                   inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x16;
+    inst_break = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                 inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x14;
+
+    inst_rdcntid_w = inst.decode.op_31_26 == 0x00 &
+                     inst.decode.op_25_22 == 0x0 & inst.decode.op_21_20 == 0x0 &
+                     inst.decode.op_19_15 == 0x00 & rk == 0x18 & rd == 0x00;
+    inst_rdcntvl_w = inst.decode.op_31_26 == 0x00 &
+                     inst.decode.op_25_22 == 0x0 & inst.decode.op_21_20 == 0x0 &
+                     inst.decode.op_19_15 == 0x00 & rk == 0x18 & rj == 0x00 &
+                     ~rd == 0x00;
+    inst_rdcntvh_w = inst.decode.op_31_26 == 0x00 &
+                     inst.decode.op_25_22 == 0x0 & inst.decode.op_21_20 == 0x0 &
+                     inst.decode.op_19_15 == 0x00 & rk == 0x19 & rj == 0x00;
+    inst_zero = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
+                inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x00 &
+                rk == 0x00 & rj == 0x00 & rd == 0x00;
+
+    inst_invtlb = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
+                  inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x13;
+    inst_tlbsrch = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
+                   inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
+                   rk == 0x0a & rj == 0x00 & rd == 0x00;
+    inst_tlbrd = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
+                 inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
+                 rk == 0x0b & rj == 0x00 & rd == 0x00;
+    inst_tlbwr = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
+                 inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
+                 rk == 0x0c & rj == 0x00 & rd == 0x00;
+    inst_tlbfill = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
+                   inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
+                   rk == 0x0d & rj == 0x00 & rd == 0x00;
+
+    inst_ll_w = inst.decode.op_31_26 == 0x08 && ~inst_25 && ~inst_24;
+    inst_sc_w = inst.decode.op_31_26 == 0x08 && ~inst_25 && inst_24;
+
+    inst_dbar = inst.decode.op_31_26 == 0x0e & inst.decode.op_25_22 == 0x1 &
+                inst.decode.op_21_20 == 0x3 & inst.decode.op_19_15 == 0x04;
+    inst_ibar = inst.decode.op_31_26 == 0x0e & inst.decode.op_25_22 == 0x1 &
+                inst.decode.op_21_20 == 0x3 & inst.decode.op_19_15 == 0x05;
+    inst_idle = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
+                inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x11;
+
+    inst_cacop = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x08;
 
     need_ui5 = inst_slli_w | inst_srli_w | inst_srai_w;
     need_si12 = inst_addi_w | inst_ld_w | inst_st_w | inst_slti | inst_sltui |
@@ -351,7 +460,6 @@ uint32_t inst_decode() {
           : need_si14 ? extend(1, 14, i14) << 2
           : need_si20 ? i20 << 12
                       : extend(1, 12, i12);
-
 
     br_offs = need_si26 ? extend(1, 26, i26) << 2 : extend(1, 16, i16) << 2;
 
@@ -396,6 +504,13 @@ uint32_t inst_decode() {
     rf_raddr1 = rj;
     rf_raddr2 = src_reg_is_rd ? rd : rk;
 
+    // 访问 gpr
+    rf_result();
+
+    rj_value = rf_rdata1;
+    rkd_value = rf_rdata2;
+    decoder_more();
+
     rj_eq_rd = rj_value == rkd_value;
     rj_lt_rd = (int)rj_value < (int)rkd_value;
     rj_ltu_rd = rj_value < rkd_value;
@@ -410,9 +525,10 @@ uint32_t inst_decode() {
     // 跳转目标
     br_target = (inst_beq | inst_bne | inst_bl | inst_b | inst_blt | inst_bltu |
                  inst_bge | inst_bgeu)
-                    ? (current_pc + br_offs)
+                    ? (pc + br_offs)
                     : (rj_value + jirl_offs);
 
+                    
     // 指示指令是否有效，引发某些异常
     inst_valid = inst_add_w | inst_sub_w | inst_slt | inst_slti | inst_sltu |
                  inst_sltui | inst_nor | inst_and | inst_andi | inst_or |
@@ -432,17 +548,14 @@ uint32_t inst_decode() {
                  (inst_invtlb & (rd == 0 || rd == 1 || rd == 2 || rd == 3 ||
                                  rd == 4 || rd == 5 || rd == 6));
 
+    // 输送到 debug 系统，如果指令执行到了不存在的指令处，那么继续添加
+    if (!inst_valid) {
+        return inst.word;
+    }
+
     kernel_inst = inst_csrrd | inst_csrwr | inst_csrxchg | inst_tlbsrch |
                   inst_tlbrd | inst_tlbwr | inst_tlbfill | inst_invtlb |
                   inst_idle | inst_ertn;
-
-    // 访问 gpr
-    rf_result();
-
-    rj_value = rf_rdata1;
-    rkd_value = rf_rdata2;
-
-    decoder_more();
 
     alu_src1 = src1_is_pc ? pc : rj_value;
     alu_src2 = src2_is_imm ? imm : rkd_value;
@@ -460,7 +573,6 @@ uint32_t inst_decode() {
                                : UNKNOWN_TYPE;
 
     change_type.change_type = br_taken ? 2 : 1;
-
 
     return 0;
 }

@@ -13,7 +13,9 @@ void exu(uint32_t n) {
     while (n--) {
         next_pc();
         inst = inst_fetch();
-
+        if(inst.word == 0){
+            break;
+        }
         decode_result = inst_decode();
 
         if (decode_result != 0) {
