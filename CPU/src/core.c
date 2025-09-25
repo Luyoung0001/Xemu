@@ -13,7 +13,6 @@ instruction_t inst;  // 指令
 decode_info de_info;
 uint32_t decode_result;
 execute_result exe_resul;
-mem_result mem_re;
 
 uint8_t inst_add_w;
 uint8_t inst_sub_w;
@@ -122,6 +121,7 @@ uint8_t alu_op_xor;
 uint8_t alu_op_sll;
 uint8_t alu_op_srl;
 uint8_t alu_op_sra;
+uint8_t alu_op_lu12i;
 
 uint8_t rf_raddr1;
 uint8_t rf_raddr2;
@@ -151,9 +151,7 @@ uint8_t csr_we;
 uint8_t csr_mask;
 
 uint32_t imm;         // 立即数
-uint8_t gpr_we;       // 是否写寄存器
 uint8_t mem_we;       // 是否写内存
-uint8_t gpr_wr_addr;  // 写寄存器的地址
 
 uint32_t br_offs;
 uint32_t jirl_offs;
@@ -165,7 +163,7 @@ uint8_t rj_gt_rd;
 uint8_t rj_gtu_rd;
 
 uint8_t br_taken;     // 是否跳转
-uint32_t br_target;    // 跳转地址
+uint32_t br_target;   // 跳转地址
 uint8_t inst_valid;   // 当前指令是否有效，如果无效可能会引发异常
 uint8_t kernel_inst;  // 是否是核心态指令
 
@@ -182,6 +180,11 @@ uint8_t dst_is_rj;
 
 uint8_t gr_we;  // 寄存器写
 uint8_t dest;   // 寄存写地址
+
+uint32_t rdata_mem;  // 从内存取出的值
+uint32_t wdata_mem;  // 存储的值
+uint32_t final_rdata_result;
+uint32_t final_wdata_result;
 
 // 初始化 CPU 寄存器和程序计数器
 void init_gpr() {
@@ -233,6 +236,7 @@ void decoder_more() {
     alu_op_sll = inst_slli_w | inst_sll;
     alu_op_srl = inst_srli_w | inst_srl;
     alu_op_sra = inst_srai_w | inst_sra;
+    alu_op_lu12i = inst_lu12i_w;
 }
 
 // alu 计算单元
@@ -249,19 +253,21 @@ void alu_caculate() {
     uint32_t _xor = alu_src1 ^ alu_src2;
     uint32_t _srl = alu_src1 >> (alu_src2 & 0x1F);
     uint32_t _sra = (int32_t)alu_src1 >> (alu_src2 & 0x1F);
+    uint32_t _lu12i = alu_src2;
 
-    alu_result = alu_op_add    ? _add
-                 : alu_op_sub  ? _sub
-                 : alu_op_slt  ? _slt
-                 : alu_op_sltu ? _sltu
-                 : alu_op_and  ? _and
-                 : alu_op_nor  ? _nor
-                 : alu_op_or   ? _or
-                 : alu_op_xor  ? _xor
-                 : alu_op_sll  ? _sll
-                 : alu_op_srl  ? _srl
-                 : alu_op_sra  ? _sra
-                               : 0;
+    alu_result = alu_op_add     ? _add
+                 : alu_op_sub   ? _sub
+                 : alu_op_slt   ? _slt
+                 : alu_op_sltu  ? _sltu
+                 : alu_op_and   ? _and
+                 : alu_op_nor   ? _nor
+                 : alu_op_or    ? _or
+                 : alu_op_xor   ? _xor
+                 : alu_op_sll   ? _sll
+                 : alu_op_srl   ? _srl
+                 : alu_op_sra   ? _sra
+                 : alu_op_lu12i ? _lu12i
+                                : 0;
 }
 // mult_dev 计算单元
 
@@ -299,63 +305,63 @@ uint32_t extend(uint8_t s, uint8_t length_of_num, uint32_t num) {
 uint32_t inst_decode() {
     // 解析指令类型
     instruction_t instr = inst;
+    uint32_t MASK_24 = 0b00000001000000000000000000000000;
+    uint32_t MASK_25 = 0b00000010000000000000000000000000;
     uint8_t rd = instr.decode.rd_4_0;
     uint8_t rj = instr.decode.rj_9_5;
     uint8_t rk = instr.decode.rk_14_10;
 
-    uint16_t i12 = (instr.word >> 10) & 0xfff;
-    uint16_t i14 = (instr.word >> 10) & 0x3fff;
-    uint16_t i20 = (instr.word >> 5) & 0xfffff;
-    uint16_t i16 = (instr.word >> 10) & 0xffff;
-    uint16_t i26 = (instr.word & 0x3ff) | i16;
-    uint8_t inst_25 = (inst.word & 0b00000010000000000000000000000000) ==
-                      1;  // 指令的第 25 位
-    uint8_t inst_24 = (inst.word & 0b00000001000000000000000000000000) ==
-                      1;  // 指令的第 24 位
+    uint32_t i12 = (instr.word >> 10) & 0xfff;
+    uint32_t i14 = (instr.word >> 10) & 0x3fff;
+    uint32_t i20 = (instr.word >> 5) & 0xfffff;
+    uint32_t i16 = (instr.word >> 10) & 0xffff;
+    uint32_t i26 = (instr.word & 0x3ff) | i16;
+    uint8_t inst_25 = (inst.word & MASK_25) == MASK_25;  // 指令的第 25 位
+    uint8_t inst_24 = (inst.word & MASK_24) == MASK_24;  // 指令的第 24 位
 
-    inst_add_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                 inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x00;
-    inst_sub_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                 inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x02;
-    inst_slt = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x04;
-    inst_slti = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x08;
-    inst_sltu = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x05;
-    inst_sltui = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x09;
-    inst_nor = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x08;
-    inst_and = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x09;
-    inst_andi = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0xd;
-    inst_or = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-              inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x0a;
-    inst_ori = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0xe;
-    inst_xor = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x0b;
-    inst_xori = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0xf;
-    inst_sll = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0xe;
-    inst_slli_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x1 &
-                  inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x01;
-    inst_srl = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x0f;
-    inst_srli_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x1 &
-                  inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x09;
-    inst_sra = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-               inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x10;
-    inst_srai_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x1 &
-                  inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x11;
-    inst_addi_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0xa;
+    inst_add_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                 inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x00;
+    inst_sub_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                 inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x02;
+    inst_slt = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+               inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x04;
+    inst_slti = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x08;
+    inst_sltu = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x05;
+    inst_sltui = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x09;
+    inst_nor = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+               inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x08;
+    inst_and = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+               inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x09;
+    inst_andi = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0xd;
+    inst_or = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+              inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x0a;
+    inst_ori = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0xe;
+    inst_xor = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+               inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x0b;
+    inst_xori = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0xf;
+    inst_sll = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+               inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0xe;
+    inst_slli_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x1 &&
+                  inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x01;
+    inst_srl = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+               inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x0f;
+    inst_srli_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x1 &&
+                  inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x09;
+    inst_sra = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+               inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x10;
+    inst_srai_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x1 &&
+                  inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x11;
+    inst_addi_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0xa;
 
-    inst_ld_w = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x2;
-    inst_ld_b = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x0;
-    inst_ld_bu = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x08;
-    inst_ld_h = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x1;
-    inst_ld_hu = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x09;
-    inst_st_w = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x6;
-    inst_st_b = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x4;
-    inst_st_h = inst.decode.op_31_26 == 0x0a & inst.decode.op_25_22 == 0x5;
+    inst_ld_w = inst.decode.op_31_26 == 0x0a && inst.decode.op_25_22 == 0x2;
+    inst_ld_b = inst.decode.op_31_26 == 0x0a && inst.decode.op_25_22 == 0x0;
+    inst_ld_bu = inst.decode.op_31_26 == 0x0a && inst.decode.op_25_22 == 0x08;
+    inst_ld_h = inst.decode.op_31_26 == 0x0a && inst.decode.op_25_22 == 0x1;
+    inst_ld_hu = inst.decode.op_31_26 == 0x0a && inst.decode.op_25_22 == 0x09;
+    inst_st_w = inst.decode.op_31_26 == 0x0a && inst.decode.op_25_22 == 0x6;
+    inst_st_b = inst.decode.op_31_26 == 0x0a && inst.decode.op_25_22 == 0x4;
+    inst_st_h = inst.decode.op_31_26 == 0x0a && inst.decode.op_25_22 == 0x5;
 
     inst_jirl = inst.decode.op_31_26 == 0x13;
     inst_b = inst.decode.op_31_26 == 0x14;
@@ -370,75 +376,82 @@ uint32_t inst_decode() {
     inst_lu12i_w = inst.decode.op_31_26 == 0x05 && ~inst_25;
     inst_pcaddu12i = inst.decode.op_31_26 == 0x07 && ~inst_25;
 
-    inst_mul_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                 inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x18;
-    inst_mulh_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                  inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x19;
-    inst_mulh_wu = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                   inst.decode.op_21_20 == 0x1 & inst.decode.op_19_15 == 0x1a;
-    inst_div_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                 inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x0;
-    inst_div_wu = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                  inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x2;
-    inst_mod_w = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                 inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x1;
-    inst_mod_wu = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                  inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x3;
+    inst_mul_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                 inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x18;
+    inst_mulh_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                  inst.decode.op_21_20 == 0x1 && inst.decode.op_19_15 == 0x19;
+    inst_mulh_wu = inst.decode.op_31_26 == 0x00 &&
+                   inst.decode.op_25_22 == 0x0 && inst.decode.op_21_20 == 0x1 &&
+                   inst.decode.op_19_15 == 0x1a;
+    inst_div_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                 inst.decode.op_21_20 == 0x2 && inst.decode.op_19_15 == 0x0;
+    inst_div_wu = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                  inst.decode.op_21_20 == 0x2 && inst.decode.op_19_15 == 0x2;
+    inst_mod_w = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                 inst.decode.op_21_20 == 0x2 && inst.decode.op_19_15 == 0x1;
+    inst_mod_wu = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                  inst.decode.op_21_20 == 0x2 && inst.decode.op_19_15 == 0x3;
 
     inst_csrrd =
         inst.decode.op_31_26 == 0x01 && ~inst_25 && ~inst_24 && rj == 0x00;
     inst_csrwr =
-        inst.decode.op_31_26 == 0x01 && ~inst_25 & ~inst_24 & rj == 0x01;
-    inst_csrxchg = inst.decode.op_31_26 == 0x01 &&
-                   ~inst_25 & ~inst_24 & ~rj == 0x00 & ~rj == 0x01;
-    inst_ertn = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
-                inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
-                rk == 0x0e & rj == 0x00 & rd == 0x00;
-    inst_syscall = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                   inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x16;
-    inst_break = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                 inst.decode.op_21_20 == 0x2 & inst.decode.op_19_15 == 0x14;
+        inst.decode.op_31_26 == 0x01 && ~inst_25 && ~inst_24 && rj == 0x01;
+    inst_csrxchg = inst.decode.op_31_26 == 0x01 && ~inst_25 && ~inst_24 &&
+                   ~rj == 0x00 && ~rj == 0x01;
+    inst_ertn = inst.decode.op_31_26 == 0x01 && inst.decode.op_25_22 == 0x09 &&
+                inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x10 &&
+                rk == 0x0e && rj == 0x00 && rd == 0x00;
+    inst_syscall = inst.decode.op_31_26 == 0x00 &&
+                   inst.decode.op_25_22 == 0x0 && inst.decode.op_21_20 == 0x2 &&
+                   inst.decode.op_19_15 == 0x16;
+    inst_break = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                 inst.decode.op_21_20 == 0x2 && inst.decode.op_19_15 == 0x14;
 
-    inst_rdcntid_w = inst.decode.op_31_26 == 0x00 &
-                     inst.decode.op_25_22 == 0x0 & inst.decode.op_21_20 == 0x0 &
-                     inst.decode.op_19_15 == 0x00 & rk == 0x18 & rd == 0x00;
-    inst_rdcntvl_w = inst.decode.op_31_26 == 0x00 &
-                     inst.decode.op_25_22 == 0x0 & inst.decode.op_21_20 == 0x0 &
-                     inst.decode.op_19_15 == 0x00 & rk == 0x18 & rj == 0x00 &
-                     ~rd == 0x00;
-    inst_rdcntvh_w = inst.decode.op_31_26 == 0x00 &
-                     inst.decode.op_25_22 == 0x0 & inst.decode.op_21_20 == 0x0 &
-                     inst.decode.op_19_15 == 0x00 & rk == 0x19 & rj == 0x00;
-    inst_zero = inst.decode.op_31_26 == 0x00 & inst.decode.op_25_22 == 0x0 &
-                inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x00 &
-                rk == 0x00 & rj == 0x00 & rd == 0x00;
+    inst_rdcntid_w = inst.decode.op_31_26 == 0x00 &&
+                     inst.decode.op_25_22 == 0x0 &&
+                     inst.decode.op_21_20 == 0x0 &&
+                     inst.decode.op_19_15 == 0x00 && rk == 0x18 && rd == 0x00;
+    inst_rdcntvl_w =
+        inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+        inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x00 &&
+        rk == 0x18 && rj == 0x00 && ~rd == 0x00;
+    inst_rdcntvh_w = inst.decode.op_31_26 == 0x00 &&
+                     inst.decode.op_25_22 == 0x0 &&
+                     inst.decode.op_21_20 == 0x0 &&
+                     inst.decode.op_19_15 == 0x00 && rk == 0x19 && rj == 0x00;
+    inst_zero = inst.decode.op_31_26 == 0x00 && inst.decode.op_25_22 == 0x0 &&
+                inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x00 &&
+                rk == 0x00 && rj == 0x00 && rd == 0x00;
 
-    inst_invtlb = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
-                  inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x13;
-    inst_tlbsrch = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
-                   inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
-                   rk == 0x0a & rj == 0x00 & rd == 0x00;
-    inst_tlbrd = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
-                 inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
-                 rk == 0x0b & rj == 0x00 & rd == 0x00;
-    inst_tlbwr = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
-                 inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
-                 rk == 0x0c & rj == 0x00 & rd == 0x00;
-    inst_tlbfill = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
-                   inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x10 &
-                   rk == 0x0d & rj == 0x00 & rd == 0x00;
+    inst_invtlb = inst.decode.op_31_26 == 0x01 &&
+                  inst.decode.op_25_22 == 0x09 && inst.decode.op_21_20 == 0x0 &&
+                  inst.decode.op_19_15 == 0x13;
+    inst_tlbsrch =
+        inst.decode.op_31_26 == 0x01 && inst.decode.op_25_22 == 0x09 &&
+        inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x10 &&
+        rk == 0x0a && rj == 0x00 && rd == 0x00;
+    inst_tlbrd = inst.decode.op_31_26 == 0x01 && inst.decode.op_25_22 == 0x09 &&
+                 inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x10 &&
+                 rk == 0x0b && rj == 0x00 && rd == 0x00;
+    inst_tlbwr = inst.decode.op_31_26 == 0x01 && inst.decode.op_25_22 == 0x09 &&
+                 inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x10 &&
+                 rk == 0x0c && rj == 0x00 && rd == 0x00;
+    inst_tlbfill =
+        inst.decode.op_31_26 == 0x01 && inst.decode.op_25_22 == 0x09 &&
+        inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x10 &&
+        rk == 0x0d && rj == 0x00 && rd == 0x00;
 
     inst_ll_w = inst.decode.op_31_26 == 0x08 && ~inst_25 && ~inst_24;
     inst_sc_w = inst.decode.op_31_26 == 0x08 && ~inst_25 && inst_24;
 
-    inst_dbar = inst.decode.op_31_26 == 0x0e & inst.decode.op_25_22 == 0x1 &
-                inst.decode.op_21_20 == 0x3 & inst.decode.op_19_15 == 0x04;
-    inst_ibar = inst.decode.op_31_26 == 0x0e & inst.decode.op_25_22 == 0x1 &
-                inst.decode.op_21_20 == 0x3 & inst.decode.op_19_15 == 0x05;
-    inst_idle = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x09 &
-                inst.decode.op_21_20 == 0x0 & inst.decode.op_19_15 == 0x11;
+    inst_dbar = inst.decode.op_31_26 == 0x0e && inst.decode.op_25_22 == 0x1 &&
+                inst.decode.op_21_20 == 0x3 && inst.decode.op_19_15 == 0x04;
+    inst_ibar = inst.decode.op_31_26 == 0x0e && inst.decode.op_25_22 == 0x1 &&
+                inst.decode.op_21_20 == 0x3 && inst.decode.op_19_15 == 0x05;
+    inst_idle = inst.decode.op_31_26 == 0x01 && inst.decode.op_25_22 == 0x09 &&
+                inst.decode.op_21_20 == 0x0 && inst.decode.op_19_15 == 0x11;
 
-    inst_cacop = inst.decode.op_31_26 == 0x01 & inst.decode.op_25_22 == 0x08;
+    inst_cacop = inst.decode.op_31_26 == 0x01 && inst.decode.op_25_22 == 0x08;
 
     need_ui5 = inst_slli_w | inst_srli_w | inst_srai_w;
     need_si12 = inst_addi_w | inst_ld_w | inst_st_w | inst_slti | inst_sltui |
@@ -483,6 +496,7 @@ uint32_t inst_decode() {
 
     res_from_csr = inst_csrrd | inst_csrwr | inst_csrxchg | inst_rdcntid_w |
                    inst_rdcntvl_w | inst_rdcntvh_w | inst_cpucfg;
+    mem_we = inst_st_w || inst_st_b || inst_st_h;
 
     dst_is_r1 = inst_bl;
     dst_is_rj = inst_rdcntid_w;
@@ -498,7 +512,6 @@ uint32_t inst_decode() {
             inst_rdcntvl_w | inst_rdcntvh_w | inst_ll_w | inst_sc_w |
             inst_cpucfg;
 
-    mem_we = inst_st_w || inst_st_b || inst_st_h;
     dest = dst_is_r1 ? 1 : dst_is_rj ? rj : rd;
 
     rf_raddr1 = rj;
@@ -528,7 +541,6 @@ uint32_t inst_decode() {
                     ? (pc + br_offs)
                     : (rj_value + jirl_offs);
 
-                    
     // 指示指令是否有效，引发某些异常
     inst_valid = inst_add_w | inst_sub_w | inst_slt | inst_slti | inst_sltu |
                  inst_sltui | inst_nor | inst_and | inst_andi | inst_or |
@@ -560,12 +572,16 @@ uint32_t inst_decode() {
     alu_src1 = src1_is_pc ? pc : rj_value;
     alu_src2 = src2_is_imm ? imm : rkd_value;
 
-    // 计算类型：
-    // alu
-    // mult_div
+    // printf("alu_src2: %08x\n", alu_src2);
+    // printf("imm: %08x\n", imm);
+    // printf("i20: %08x\n", i20);
+    // printf("inst_lu12i_w: %08x\n", inst_lu12i_w);
+    // printf("(instr.word >> 5): %08x\n", (instr.word >> 5));
+    // printf("(instr.word >> 5) & 0xfffff: %08x\n", (instr.word >> 5) &
+    // 0xfffff); 计算类型： alu mult_div
     de_info.inst_op_type = (alu_op_add | alu_op_sub | alu_op_slt | alu_op_sltu |
                             alu_op_and | alu_op_nor | alu_op_or | alu_op_xor |
-                            alu_op_sll | alu_op_srl | alu_op_sra)
+                            alu_op_sll | alu_op_srl | alu_op_sra | alu_op_lu12i)
                                ? ALU_TYPE
                            : (inst_mul_w | inst_mulh_wu | inst_div_w |
                               inst_div_wu | inst_mod_w | inst_mod_wu)
@@ -588,23 +604,72 @@ void inst_execute() {
 // 访存
 void memo_access() {
     // 访存
-    // ...
-    // 返回信息
-    mem_re.wr_reg_addr = dest;
-    mem_re.wr_reg = gr_we;
-    mem_re.alu_result = alu_result;
-    mem_re.mult_dev_result = mul_div_result;
-    mem_re.load_or_store_addr = alu_result;
+    // 这里访问内存的地址永远要保持 4 字节对齐
+    // 取出来的值要根据 ld 的类型进行截取或者处理
+
+    uint32_t final_addr = alu_result & ~(0x3);
+    if (res_from_mem) {
+        // load data
+        rdata_mem = read_memory(final_addr);
+    }
+
+    uint8_t offset = alu_result & 0x3;  // 取最低两位
+    // load
+    if (inst_ld_b) {
+        final_rdata_result =
+            offset == 0   ? extend(1, 8, rdata_mem & 0xf)
+            : offset == 1 ? extend(1, 8, (rdata_mem >> 8) & 0xf)
+            : offset == 2 ? extend(1, 8, (rdata_mem >> 16) & 0xf)
+                          : extend(1, 8, (rdata_mem >> 24) & 0xf);
+    } else if (inst_ld_bu) {
+        final_rdata_result =
+            offset == 0   ? extend(0, 8, rdata_mem & 0xf)
+            : offset == 1 ? extend(0, 8, (rdata_mem >> 8) & 0xf)
+            : offset == 2 ? extend(0, 8, (rdata_mem >> 16) & 0xf)
+                          : extend(0, 8, (rdata_mem >> 24) & 0xf);
+
+    } else if (inst_ld_h) {
+        final_rdata_result = offset == 0 ? extend(1, 16, rdata_mem & 0xff)
+                             : offset == 2
+                                 ? extend(1, 16, (rdata_mem >> 16) & 0xff)
+                                 : 0;  // 其他情况异常
+    } else if (inst_ld_hu) {
+        final_rdata_result = offset == 0 ? extend(0, 16, rdata_mem & 0xff)
+                             : offset == 2
+                                 ? extend(0, 16, (rdata_mem >> 16) & 0xff)
+                                 : 0;  // 其他情况异常
+    } else if (inst_ld_w) {
+        final_rdata_result = rdata_mem;
+    }
+
+    // store
+    // rkd_value
+    if (inst_st_b) {
+        uint8_t lowest_8_bit = rkd_value & 0xff;
+        final_wdata_result = lowest_8_bit | (lowest_8_bit << 8) |
+                             (lowest_8_bit << 16) | (lowest_8_bit << 24);
+    } else if (inst_st_h) {
+        uint8_t lowest_16_bit = rkd_value & 0xffff;
+        final_wdata_result = lowest_16_bit | (lowest_16_bit << 16);
+    } else if (inst_st_w) {
+        final_wdata_result = rkd_value;
+    }
+
+    if (mem_we) {
+        // store data
+        write_memory(final_addr, final_wdata_result);
+    }
+
 }
 
 // 回写
 void write_back() {
-    mycpu_trace_info->we = mem_re.wr_reg;
+    mycpu_trace_info->we = gr_we;
     mycpu_trace_info->pc = pc;
-    mycpu_trace_info->wnum = mem_re.wr_reg_addr;
-    mycpu_trace_info->value = mem_re.alu_result;
+    mycpu_trace_info->wnum = dest;
+    mycpu_trace_info->value = res_from_mem ? final_rdata_result : alu_result;
 
-    if (mem_re.wr_reg && mem_re.wr_reg_addr != 0) {
-        gpr.regs[mem_re.wr_reg_addr] = mem_re.alu_result;
+    if (gr_we && dest != 0) {
+        gpr.regs[dest] = res_from_mem ? final_rdata_result : alu_result;
     }
 }

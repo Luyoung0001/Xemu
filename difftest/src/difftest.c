@@ -26,7 +26,7 @@ void read_ref() {
 
     // 使用 fscanf 读取文件内容
     if (fscanf(fp, "%x%x%x%x", &(ref_struct->we), &(ref_struct->pc),
-           &(ref_struct->wnum), &(ref_struct->value)) != 4) {
+               &(ref_struct->wnum), &(ref_struct->value)) != 4) {
         printf("Error reading from file\n");
         return;
     }
@@ -49,7 +49,14 @@ void difftest_init() {
 
 int difftest() {
     // 每次调用，就读取一行
+    // 如果这个指令不写寄存器，那么直接忽略 difftest
+    print_info();
+    if (mycpu_trace_info->we == 0) {
+        return 1;
+    }
     read_ref();
+
+    print_info();
     int good = (ref_struct->we == mycpu_trace_info->we &&
                 ref_struct->wnum == mycpu_trace_info->wnum &&
                 ref_struct->pc == mycpu_trace_info->pc &&
@@ -58,5 +65,6 @@ int difftest() {
     if (!good) {
         print_info();
     }
+
     return good;
 }

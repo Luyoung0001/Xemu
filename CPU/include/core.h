@@ -177,6 +177,5 @@ extern instruction_t inst;  // 指令
 extern decode_info de_info;
 extern uint32_t decode_result;
 extern execute_result exe_resul;
-extern mem_result mem_re;
 
 #endif
