@@ -8,12 +8,14 @@ void main_init() {
     pc = 0x1bfffffc;
     difftest_init();
 }
-
+uint64_t inst_count = 0;
 void exu(uint32_t n) {
     while (n--) {
+        inst_count++;
+        printf("%luth\n", inst_count);
         next_pc();
         inst = inst_fetch();
-        if(inst.word == 0){
+        if (inst.word == 0) {
             break;
         }
         decode_result = inst_decode();
@@ -24,13 +26,16 @@ void exu(uint32_t n) {
             break;
         }
         // 如果顺序执行
-        if (change_type.change_type == 1) {
-            inst_execute();
-            memo_access();
-            write_back();
-            if (!difftest()) {
-                break;
-            };
+        inst_execute();
+        memo_access();
+        write_back();
+        if (!difftest()) {
+            printf("Oops, wrong!!!\n");
+            break;
+        };
+        if (pc == 0x1c000100) {
+            printf("\033[32mPassed all the tests!\033[0m\n");
+            break;
         }
     }
 }

@@ -150,8 +150,8 @@ uint8_t rd_csr_addr;
 uint8_t csr_we;
 uint8_t csr_mask;
 
-uint32_t imm;         // 立即数
-uint8_t mem_we;       // 是否写内存
+uint32_t imm;    // 立即数
+uint8_t mem_we;  // 是否写内存
 
 uint32_t br_offs;
 uint32_t jirl_offs;
@@ -272,15 +272,28 @@ void alu_caculate() {
 // mult_dev 计算单元
 
 void mult_div() {
-    uint64_t mulh_w = mul_div_src1 * mul_div_src1;
-    uint64_t mulhu_w = mul_div_src1 * mul_div_src1;
-    uint32_t div_w = mul_div_src1 / mul_div_src2;
-    uint32_t divu_w = mul_div_src1 / mul_div_src2;
-    uint32_t mod_w = mul_div_src1 % mul_div_src2;
-    uint32_t modu_w = mul_div_src1 % mul_div_src2;
+    printf("mul_div_src1: %08x    mul_div_src2: %08x\n", mul_div_src1,
+           mul_div_src2);
 
-    mul_div_result = inst_mul_w     ? mulh_w
-                     : inst_mulh_wu ? mulhu_w
+    printf("inst_mulh_w:%d\n", inst_mulh_w);
+
+    // 转换要具有连续性，先转成有符号的，再转换成无符号的
+    int64_t mul_w = (int64_t)((int32_t)mul_div_src1) * (int64_t)((int32_t)mul_div_src2);
+    uint64_t mulhu_w = (uint64_t)mul_div_src1 * (uint64_t)mul_div_src2;
+    int32_t div_w =
+        mul_div_src2 == 0 ? 0 : (int32_t)mul_div_src1 / (int32_t)mul_div_src2;
+
+    uint32_t divu_w = mul_div_src2 == 0 ? 0 : mul_div_src1 / mul_div_src2;
+    uint32_t mod_w =
+        mul_div_src2 == 0 ? 0 : (int32_t)mul_div_src1 % (int32_t)mul_div_src2;
+    uint32_t modu_w = mul_div_src2 == 0 ? 0 : mul_div_src1 % mul_div_src2;
+
+    // printf("inst_mulh_w:%016lx\n", mul_w);
+    // printf("inst_mulh_w:%016lx\n", mul_w >> 32);
+
+    mul_div_result = inst_mul_w     ? mul_w
+                     : inst_mulh_w  ? mul_w >> 32
+                     : inst_mulh_wu ? mulhu_w >> 32
                      : inst_div_w   ? div_w
                      : inst_div_wu  ? divu_w
                      : inst_mod_w   ? mod_w
@@ -315,7 +328,7 @@ uint32_t inst_decode() {
     uint32_t i14 = (instr.word >> 10) & 0x3fff;
     uint32_t i20 = (instr.word >> 5) & 0xfffff;
     uint32_t i16 = (instr.word >> 10) & 0xffff;
-    uint32_t i26 = (instr.word & 0x3ff) | i16;
+    uint32_t i26 = ((instr.word & 0x3ff) << 16) | i16;
     uint8_t inst_25 = (inst.word & MASK_25) == MASK_25;  // 指令的第 25 位
     uint8_t inst_24 = (inst.word & MASK_24) == MASK_24;  // 指令的第 24 位
 
@@ -572,21 +585,35 @@ uint32_t inst_decode() {
     alu_src1 = src1_is_pc ? pc : rj_value;
     alu_src2 = src2_is_imm ? imm : rkd_value;
 
+    mul_div_src1 = rj_value;
+    mul_div_src2 = rkd_value;
+
     // printf("alu_src2: %08x\n", alu_src2);
     // printf("imm: %08x\n", imm);
     // printf("i20: %08x\n", i20);
-    // printf("inst_lu12i_w: %08x\n", inst_lu12i_w);
+    // printf("inst_bl: %08x\n", inst_bl);
+    // printf("dest: %08x\n", dest);
     // printf("(instr.word >> 5): %08x\n", (instr.word >> 5));
     // printf("(instr.word >> 5) & 0xfffff: %08x\n", (instr.word >> 5) &
-    // 0xfffff); 计算类型： alu mult_div
-    de_info.inst_op_type = (alu_op_add | alu_op_sub | alu_op_slt | alu_op_sltu |
-                            alu_op_and | alu_op_nor | alu_op_or | alu_op_xor |
-                            alu_op_sll | alu_op_srl | alu_op_sra | alu_op_lu12i)
-                               ? ALU_TYPE
-                           : (inst_mul_w | inst_mulh_wu | inst_div_w |
-                              inst_div_wu | inst_mod_w | inst_mod_wu)
-                               ? MULT_DIV_TYPE
-                               : UNKNOWN_TYPE;
+    // 0xfffff);
+
+    // printf("pc: %08x\n", pc);
+    // printf("i26: %08x\n", i26);
+    // printf("br_offs: %08x\n", br_offs);
+    // printf("extend(1, 26, i26) << 2 : %08x\n", extend(1, 26, i26) << 2 );
+    // printf("br_taken: %08x\n", br_taken);
+    // printf("br_target: %08x\n", br_target);
+
+    // 计算类型： alu mult_div
+    de_info.inst_op_type =
+        (alu_op_add | alu_op_sub | alu_op_slt | alu_op_sltu | alu_op_and |
+         alu_op_nor | alu_op_or | alu_op_xor | alu_op_sll | alu_op_srl |
+         alu_op_sra | alu_op_lu12i)
+            ? ALU_TYPE
+        : (inst_mul_w | inst_mulh_wu | inst_mulh_w | inst_div_w | inst_div_wu |
+           inst_mod_w | inst_mod_wu)
+            ? MULT_DIV_TYPE
+            : UNKNOWN_TYPE;
 
     change_type.change_type = br_taken ? 2 : 1;
 
@@ -657,9 +684,10 @@ void memo_access() {
 
     if (mem_we) {
         // store data
+        printf("final_addr: %08x final_wdata_result: %08x\n", final_addr,
+               final_wdata_result);
         write_memory(final_addr, final_wdata_result);
     }
-
 }
 
 // 回写
@@ -667,9 +695,17 @@ void write_back() {
     mycpu_trace_info->we = gr_we;
     mycpu_trace_info->pc = pc;
     mycpu_trace_info->wnum = dest;
-    mycpu_trace_info->value = res_from_mem ? final_rdata_result : alu_result;
+    mycpu_trace_info->value = res_from_mem ? final_rdata_result
+                              : de_info.inst_op_type == ALU_TYPE ? alu_result
+                              : de_info.inst_op_type == MULT_DIV_TYPE
+                                  ? mul_div_result
+                                  : alu_result;
 
     if (gr_we && dest != 0) {
-        gpr.regs[dest] = res_from_mem ? final_rdata_result : alu_result;
+        gpr.regs[dest] =
+            res_from_mem ? final_rdata_result : mycpu_trace_info->value;
+        printf("WBU: %d %08x %02x %08x\n", mycpu_trace_info->we,
+               mycpu_trace_info->pc, mycpu_trace_info->wnum,
+               mycpu_trace_info->value);
     }
 }

@@ -49,13 +49,15 @@ void difftest_init() {
 
 int difftest() {
     // 每次调用，就读取一行
-    // 如果这个指令不写寄存器，那么直接忽略 difftest
-    print_info();
-    if (mycpu_trace_info->we == 0) {
+    // 如果这个指令不写寄存器或者给 0 写，那么直接忽略 difftest
+    if (mycpu_trace_info->we == 0 || mycpu_trace_info->wnum == 0) {
         return 1;
     }
     read_ref();
-
+    // 如果 mycpu 写了，但是 ref 的建议是不用对比，那么这里依然跳过
+    if (ref_struct->we == 0) {
+        return 1;
+    }
     print_info();
     int good = (ref_struct->we == mycpu_trace_info->we &&
                 ref_struct->wnum == mycpu_trace_info->wnum &&

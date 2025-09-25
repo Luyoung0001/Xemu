@@ -3,73 +3,83 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-uint8_t* memory = NULL;                                       // 模拟的内存区域
+#define RESET_VECTOR 0x1c000000
+
+uint8_t* memory = NULL;
 char* bin_file = "/home/luyoung/Xemu/ref/func/obj/main.bin";  // 文件名
+
+
+// 地址转换
+uint8_t* padd2host(uint32_t paddr) {
+    return memory + paddr;
+}
+
+uint32_t pmem_read(uint8_t* paddr) {
+    uintptr_t addr_val = (uintptr_t)paddr;  // 将指针转换为整数类型
+    uintptr_t aligned_addr_val =
+        addr_val & ~3;  // 确保地址是 4 字节对齐的起始地址
+    uint8_t* aligned_addr =
+        (uint8_t*)aligned_addr_val;  // 将整数类型转换回指针类型
+
+    return *((uint32_t*)aligned_addr);
+}
+
+void pmem_write(uint8_t* paddr, uint32_t data) {
+    uintptr_t addr_val = (uintptr_t)paddr;  // 将指针转换为整数类型
+    uintptr_t aligned_addr_val =
+        addr_val & ~3;  // 确保地址是 4 字节对齐的起始地址
+    uint8_t* aligned_addr =
+        (uint8_t*)aligned_addr_val;  // 将整数类型转换回指针类型
+    *((uint32_t*)aligned_addr) = data;
+}
+
+uint32_t paddr_read(uint32_t paddr) {
+    return pmem_read(padd2host(paddr));
+}
+
+void paddr_write(uint32_t paddr, uint32_t data) {
+    pmem_write(padd2host(paddr), data);
+}
 
 // 读取 inst.bin 文件到内存
 void load_inst_file(const char* filename) {
-    FILE* file = fopen(filename, "rb");  // 打开文件，二进制模式
-    if (file == NULL) {
-        printf("无法打开文件: %s\n", filename);
-        exit(1);
-    }
-    // 获取文件大小
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);  // 重置文件指针到文件开头
+    FILE* fp = fopen(bin_file, "rb");
 
-    printf("文件大小: %ld 字节\n", file_size);
+    fseek(fp, 0, SEEK_END);
+    long size = ftell(fp);
 
-    if (file_size > MEMORY_SIZE) {
-        printf("文件大小超过内存限制，无法加载！\n");
-        fclose(file);
-        exit(1);
-    }
+    printf("The image is %s, size = %ld\n", bin_file, size);
 
-    // 读取文件内容到内存
-    size_t bytes_read = fread(memory, 1, file_size, file);
-    if (bytes_read != file_size) {
-        printf("文件读取错误！读取的字节数: %zu\n", bytes_read);
-        fclose(file);
-        exit(1);
-    }
-    printf("文件内容已成功加载到内存。\n");
-    fclose(file);
+    fseek(fp, 0, SEEK_SET);
+
+    // 装载 bin 到仿真环境，可以是 sram、mrom、flash
+    fread(padd2host(RESET_VECTOR), size, 1, fp);
+
+    fclose(fp);
 }
 
 // 内存初始化
 void init_memory(void) {
     memory = (uint8_t*)malloc(MEMORY_SIZE);
-    if (memory == NULL) {
-        printf("内存分配失败！\n");
-        exit(1);  // 如果内存分配失败，退出
-    }
 
-    // 确保内存的起始地址是 4 字节对齐
-    if ((uintptr_t)memory % 4 != 0) {
-        printf("内存地址未对齐，分配失败！\n");
+    printf("PMEM_ADDR:%ld\n", (uint64_t)memory);
+    printf("PMEM_END:%ld\n", (uint64_t)memory + MEMORY_SIZE);
+    if (memory == NULL) {
+        fprintf(stderr, "内存分配失败！\n");
         exit(1);
     }
-
-    // 初始化内存为 0
-    for (int i = 0; i < MEMORY_SIZE; i++) {
-        memory[i] = 0;
-    }
-    // 将地址 0x1c000000 映射到我们分配的内存
-    // 地址 0x1c000000 应该映射到 memory 的第一个单元
-    printf("内存初始化完成，内存大小: %d 字节，起始地址: 0x%p\n", MEMORY_SIZE,
-           memory);
 
     load_inst_file(bin_file);
 }
 
 // 实现 mmio_map 函数
-void* mmio_map(uint32_t addr) {
+uint8_t* mmio_map(uint32_t addr) {
     // 检查地址是否在模拟内存区域内
-    if (addr >= 0x1c000000 && addr < (0x1c000000 + MEMORY_SIZE)) {
-        // 如果是内存区域，则返回对应的内存地址
-        return &memory[addr - 0x1c000000];  // 计算偏移量并返回地址
+    if ((uint64_t)memory + (uint64_t)addr <=
+        (uint64_t)memory + (uint64_t)MEMORY_SIZE) {
+        return (uint8_t*)((uint64_t)memory + (uint64_t)addr);
     }
+
     return NULL;
 }
 
@@ -101,7 +111,7 @@ void* mmio_map(uint32_t addr) {
 // real memo_access
 void write_memory(uint32_t addr, uint32_t value) {
     if (addr == LED_RG1_ADDR || addr == LED_RG0_ADDR || addr == LED_ADDR ||
-        addr == NUM_ADDR) {
+        addr == NUM_ADDR || addr == SW_INTER_ADDR) {
         // 忽略
         return;
     }
@@ -114,6 +124,10 @@ void write_memory(uint32_t addr, uint32_t value) {
 }
 
 uint32_t read_memory(uint32_t addr) {
+    if (addr == SW_INTER_ADDR) {
+        // 忽略
+        return 0x0000aaaa;
+    }
     void* mem_ptr = mmio_map(addr);
     if (mem_ptr != NULL) {
         printf("inst_data: %08x--->", *(uint32_t*)mem_ptr);

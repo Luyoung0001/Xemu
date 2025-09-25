@@ -9,7 +9,7 @@
 extern uint8_t *memory;
 void load_inst_file(const char *filename);
 void init_memory(void);
-void* mmio_map(uint32_t addr);
+uint8_t* mmio_map(uint32_t addr);
 void write_memory(uint32_t addr, uint32_t value);
 uint32_t read_memory(uint32_t addr);
 
